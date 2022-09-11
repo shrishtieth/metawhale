@@ -1321,19 +1321,91 @@ library SafeMath {
     }
 }
 
+interface IERC20 {
+    /**
+     * @dev Emitted when `value` tokens are moved from one account (`from`) to
+     * another (`to`).
+     *
+     * Note that `value` may be zero.
+     */
+    event Transfer(address indexed from, address indexed to, uint256 value);
+
+    /**
+     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
+     * a call to {approve}. `value` is the new allowance.
+     */
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    /**
+     * @dev Returns the amount of tokens in existence.
+     */
+    function totalSupply() external view returns (uint256);
+
+    /**
+     * @dev Returns the amount of tokens owned by `account`.
+     */
+    function balanceOf(address account) external view returns (uint256);
+
+    /**
+     * @dev Moves `amount` tokens from the caller's account to `to`.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transfer(address to, uint256 amount) external returns (bool);
+
+    /**
+     * @dev Returns the remaining number of tokens that `spender` will be
+     * allowed to spend on behalf of `owner` through {transferFrom}. This is
+     * zero by default.
+     *
+     * This value changes when {approve} or {transferFrom} are called.
+     */
+    function allowance(address owner, address spender) external view returns (uint256);
+
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * IMPORTANT: Beware that changing an allowance with this method brings the risk
+     * that someone may use both the old and the new allowance by unfortunate
+     * transaction ordering. One possible solution to mitigate this race
+     * condition is to first reduce the spender's allowance to 0 and set the
+     * desired value afterwards:
+     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+     *
+     * Emits an {Approval} event.
+     */
+    function approve(address spender, uint256 amount) external returns (bool);
+
+    /**
+     * @dev Moves `amount` tokens from `from` to `to` using the
+     * allowance mechanism. `amount` is then deducted from the caller's
+     * allowance.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) external returns (bool);
+}
+
 
 contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
     using Counters for Counters.Counter;
     using SafeMath for uint;
-    Counters.Counter public _tokenIdTracker;
-    Counters.Counter public _itemIds; //count of sale items
-    Counters.Counter public _itemsSold; //count of sold items
-    Counters.Counter public _itemsinActive;
+    Counters.Counter public tokenIdCounter;
+    Counters.Counter public itemIdCounter; //count of sale items
+    Counters.Counter public itemsSold; //count of sold items
+    Counters.Counter public itemsInactive;
 
-    address payable _seller;
-    address payable _minter;
-    address public wbnb;
-    address public treasury;
+    address public wbnb = 0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd;
     mapping(uint256 => string) public _tokenURIs; //returns uris for particular token id
     mapping(uint256 => address) public minter; //returs minter of a token id
     mapping(uint256 => uint256) public royalty; //returns royalty of a token id
@@ -1349,7 +1421,7 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
         uint itemId;
         uint256 tokenId;
         address payable seller;
-        address payable owner;
+        address owner;
         uint256 price;
         address currency;
         bool sold;
@@ -1389,20 +1461,24 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
 
 
     function _mintNft(address creator, string memory _TokenURI, uint256 _royalty)
-    external
+    public
     returns(uint256) {
         require(_royalty < maximumRoyalty, "Royalty cannnot be 100 or more");
-        uint256 NftId = _tokenIdTracker.current();
+        tokenIdCounter.increment();
+        uint256 NftId = tokenIdCounter.current();
         _safeMint(creator, NftId);
         mintedByUser[creator].push(NftId);
         royalty[NftId] = _royalty;
         minter[NftId] = creator;
         _setTokenURI(NftId, _TokenURI);
-        _tokenIdTracker.increment();
         emit Minted(NftId, creator, "succesfully minted");
         return (NftId);
     }
 
+    function adminMint(string memory uri, uint256 _royalty, uint256 price, address currency) external onlyOwner{
+        uint256 id = _mintNft(msg.sender, uri, _royalty);
+        createSale(id, currency ,price); 
+    }
     // sets uri for a token
     function _setTokenURI(uint256 tokenId, string memory _tokenURI)
     internal
@@ -1410,9 +1486,13 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
         require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
         _tokenURIs[tokenId] = _tokenURI;
     }
+
+    function updateUri(uint256 tokenId, string memory uri) external onlyOwner{
+           _setTokenURI(tokenId, uri);
+    }
     // returns the total amount of NFTs minted
     function getTokenCounter() external view returns(uint256 tracker) {
-        return (_tokenIdTracker.current());
+        return (tokenIdCounter.current());
     }
 
     function setMaxRoyalty(uint256 _royalty) external onlyOwner {
@@ -1456,19 +1536,21 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
         uint256 tokenId,
         address currency,
         uint256 price
-    ) external nonReentrant {
+    ) public nonReentrant {
         require(price > 0, "Price must be at least 1 wei");
         address tokenOwner = IERC721(address(this)).ownerOf(tokenId);
-        require(msg.sender == IERC721(address(this)).getApproved(tokenId) || msg.sender == tokenOwner,
+        require(msg.sender == IERC721(address(this)).getApproved(tokenId) || msg.sender == tokenOwner
+         || msg.sender == address(this),
             "Caller must be approved or owner for token id");
         require(IERC721(address(this)).isApprovedForAll(tokenOwner, address(this)),"Set Approval for all");
-        _itemIds.increment();
-        uint256 itemId = _itemIds.current();
+        require(getTokenToItem(tokenId) == 0, "NFT Already on sale");
+        itemIdCounter.increment();
+        uint256 itemId = itemIdCounter.current();
         idToMarketItem[itemId] = MarketItem(
             itemId,
             tokenId,
             payable(msg.sender),
-            payable(treasury),
+            address(0),
             price,
             currency,
             false,
@@ -1479,7 +1561,7 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
             itemId,
             tokenId,
             msg.sender,
-            treasury,
+            address(0),
             price,
             currency,
             false,
@@ -1493,19 +1575,40 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
     function buyItem(
         uint256 itemId
     ) external payable nonReentrant {
-        require(itemId <= _itemIds.current(), " Enter a valid Id");
+        require(itemId <= itemIdCounter.current(), " Enter a valid Id");
         require(idToMarketItem[itemId].isActive == true, "the sale is not active");
         require(msg.sender != idToMarketItem[itemId].seller, "seller cannot buy");
         uint tokenId = idToMarketItem[itemId].tokenId;
         require(idToMarketItem[itemId].sold == false, "Already Sold");
-        _seller = idToMarketItem[itemId].seller;
-        
-        IERC721(address(this)).safeTransferFrom(_seller, msg.sender, tokenId);
+        uint256 price = idToMarketItem[itemId].price;
+        uint256 platformFee;
+        for(uint256 i=0; i< fee.length; i++){
+            if(idToMarketItem[itemId].currency == wbnb){
+                payable(fee[i].recipient).transfer((price*fee[i].percentage)/10000);
+                platformFee += (price*fee[i].percentage)/10000;
+            }
+            else{
+                IERC20(idToMarketItem[itemId].currency).transferFrom(msg.sender, fee[i].recipient, (price*fee[i].percentage)/10000);
+                platformFee += (price*fee[i].percentage)/10000;
+            }
+        }
+        uint256 minterFee = ((price-platformFee)*royalty[idToMarketItem[itemId].tokenId])/10000;
+        if(idToMarketItem[itemId].currency == wbnb){
+                payable(minter[idToMarketItem[itemId].tokenId]).transfer(minterFee);
+                payable(idToMarketItem[itemId].seller).transfer(price-(platformFee+minterFee));
+            }
+            else{
+                IERC20(idToMarketItem[itemId].currency).transferFrom(msg.sender, 
+                minter[idToMarketItem[itemId].tokenId], minterFee);
+                IERC20(idToMarketItem[itemId].currency).transferFrom(msg.sender, 
+                idToMarketItem[itemId].seller, (price-(platformFee+minterFee)));
+            }
+        IERC721(address(this)).safeTransferFrom(idToMarketItem[itemId].seller, msg.sender, tokenId);
         idToMarketItem[itemId].owner = payable(msg.sender);
         idToMarketItem[itemId].sold = true;
         idToMarketItem[itemId].isActive = false;
-        _itemsSold.increment();
-        _itemsinActive.increment();
+        itemsSold.increment();
+        itemsInactive.increment();
         emit ItemBought(
             itemId,
             tokenId,
@@ -1520,22 +1623,40 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
 
 
     
-    // function EndSale(uint256 itemId) external nonReentrant {
-    //     require(itemId <= _itemIds.current(), " Enter a valid Id");
-    //     require(msg.sender == idToMarketItem[itemId].seller && idToMarketItem[itemId].sold == false && idToMarketItem[itemId].isActive == true);
-    //     idToMarketItem[itemId].isActive = false;
-    //     _itemsinActive.increment();
-    //     IERC721(idToMarketItem[itemId].nftContract).approve(0x0000000000000000000000000000000000000000, idToMarketItem[itemId].tokenId);
-    //     IERC721(idToMarketItem[itemId].nftContract).transferFrom(address(this), msg.sender, idToMarketItem[itemId].tokenId);
+    function EndSale(uint256 itemId) external nonReentrant {
+        require(itemId <= itemIdCounter.current(), " Enter a valid Id");
+        require(msg.sender == idToMarketItem[itemId].seller && idToMarketItem[itemId].sold == false && idToMarketItem[itemId].isActive == true);
+        idToMarketItem[itemId].isActive = false;
+        itemsInactive.increment();
+    }
 
-    // }
+    function editSale(uint256 itemId, uint256 price, address currency) external nonReentrant {
+       require(itemId <= itemIdCounter.current(), " Enter a valid Id");
+      require(msg.sender==idToMarketItem[itemId].seller && idToMarketItem[itemId].sold == false && idToMarketItem[itemId].isActive == true );
+      idToMarketItem[itemId].price = price;
+      idToMarketItem[itemId].currency = currency;
+   }
+
+   function getTokenToItem(uint256 token) public view returns(uint256 itemId){
+    uint itemCount = itemIdCounter.current();
+    uint256 saleId;
+    for (uint i = 0; i < itemCount; i++) {
+      if ( idToMarketItem[i+(1)].isActive ==true && 
+      idToMarketItem[i+(1)].tokenId == token)
+      {
+       saleId = i+1;
+      }
+    }
+    return(saleId);
+   }
+
 
 
 
     /* Returns all unsold market items */
     function fetchMarketItems() public view returns(MarketItem[] memory) {
-        uint itemCount = _itemIds.current();
-        uint unsoldItemCount = _itemIds.current().sub(_itemsinActive.current());
+        uint itemCount = itemIdCounter.current();
+        uint unsoldItemCount = itemIdCounter.current().sub(itemsInactive.current());
         uint currentIndex = 0;
 
         MarketItem[] memory items = new MarketItem[](unsoldItemCount);
@@ -1552,7 +1673,7 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
 
     /* Returns  items that a user has purchased */
     function fetchMyNFTs() public view returns(MarketItem[] memory) {
-        uint totalItemCount = _itemIds.current();
+        uint totalItemCount = itemIdCounter.current();
         uint itemCount = 0;
         uint currentIndex = 0;
 
@@ -1577,7 +1698,7 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
 
     /* Returns only items a user has created */
     function fetchItemsCreated() public view returns(MarketItem[] memory) {
-        uint totalItemCount = _itemIds.current();
+        uint totalItemCount = itemIdCounter.current();
         uint itemCount = 0;
         uint currentIndex = 0;
 
