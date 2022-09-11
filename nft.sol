@@ -1719,6 +1719,50 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
         return items;
     }
 
+     /* Returns only items a user has created */
+    function fetchUserListings() public view returns(MarketItem[] memory) {
+        uint totalItemCount = itemIdCounter.current();
+        uint itemCount = 0;
+        uint currentIndex = 0;
+
+        for (uint i = 0; i < totalItemCount; i++) {
+            if (idToMarketItem[i.add(1)].seller == msg.sender && idToMarketItem[i.add(1)].isActive == true) {
+                itemCount = itemCount.add(1);
+            }
+        }
+        MarketItem[] memory items = new MarketItem[](itemCount);
+        for (uint i = 0; i < totalItemCount; i++) {
+            if (idToMarketItem[i.add(1)].seller == msg.sender && idToMarketItem[i.add(1)].isActive == true) {
+                uint currentId = i.add(1);
+                MarketItem storage currentItem = idToMarketItem[currentId];
+                items[currentIndex] = currentItem;
+                currentIndex = currentIndex.add(1);
+            }
+        }
+        return items;
+    }
+
+    function getNftsOwnedByUser(address user) external view returns(uint256[ ]memory tokens){
+        uint totalItemCount = tokenIdCounter.current();
+        uint itemCount = 0;
+        uint currentIndex = 0;
+
+        for (uint i = 1; i <= totalItemCount; i++) {
+            if (ownerOf(i) == user) {
+                itemCount = itemCount.add(1);
+            }
+        }
+        uint256[] memory items = new uint256[](itemCount);
+        for (uint i = 1; i <= totalItemCount; i++) {
+            if (ownerOf(i) == user) {
+                items[currentIndex] = i;
+                currentIndex = currentIndex+(1);
+            }
+        }
+        return items;
+    }
+
+
     receive() external payable {}
     fallback() external payable {}
 }
