@@ -1720,19 +1720,19 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
     }
 
      /* Returns only items a user has created */
-    function fetchUserListings() public view returns(MarketItem[] memory) {
+    function fetchUserListings(address user) public view returns(MarketItem[] memory) {
         uint totalItemCount = itemIdCounter.current();
         uint itemCount = 0;
         uint currentIndex = 0;
 
         for (uint i = 0; i < totalItemCount; i++) {
-            if (idToMarketItem[i.add(1)].seller == msg.sender && idToMarketItem[i.add(1)].isActive == true) {
+            if (idToMarketItem[i.add(1)].seller == user && idToMarketItem[i.add(1)].isActive == true) {
                 itemCount = itemCount.add(1);
             }
         }
         MarketItem[] memory items = new MarketItem[](itemCount);
         for (uint i = 0; i < totalItemCount; i++) {
-            if (idToMarketItem[i.add(1)].seller == msg.sender && idToMarketItem[i.add(1)].isActive == true) {
+            if (idToMarketItem[i.add(1)].seller == user && idToMarketItem[i.add(1)].isActive == true) {
                 uint currentId = i.add(1);
                 MarketItem storage currentItem = idToMarketItem[currentId];
                 items[currentIndex] = currentItem;
