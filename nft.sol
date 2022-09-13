@@ -1410,7 +1410,7 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
     mapping(uint256 => address) public minter; //returs minter of a token id
     mapping(uint256 => uint256) public royalty; //returns royalty of a token id
     mapping(address => uint256[]) public mintedByUser;
-    uint256 public maximumRoyalty = 100;
+    uint256 public maximumRoyalty = 1000;
     Fee[] public fee;
 
 
@@ -1431,6 +1431,12 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
     struct Fee {
         address recipient;
         uint256 percentage;
+    }
+
+    struct Nft{
+        uint256 tokenId;
+        uint256 itemId;
+        string uri;
     }
 
     mapping(uint256 => MarketItem) public idToMarketItem;
@@ -1759,6 +1765,26 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
                 currentIndex = currentIndex+(1);
             }
         }
+        return items;
+    }
+
+    function getNftDetails() external view returns(Nft[]memory tokens){
+        uint totalItemCount = tokenIdCounter.current();
+        uint currentIndex = 0;
+        Nft[] memory items = new Nft[](totalItemCount);
+        for (uint i = 1; i <= totalItemCount; i++) {
+
+                Nft memory currentItem =  Nft({
+                    tokenId : i,
+                    itemId : getTokenToItem(i),
+                    uri : tokenURI(i)
+
+                });
+                items[currentIndex] = currentItem;
+                currentIndex = currentIndex.add(1);
+            }
+            
+        
         return items;
     }
 
