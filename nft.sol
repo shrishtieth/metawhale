@@ -1788,6 +1788,12 @@ contract Metawhale is IERC721Receiver, ERC721, ReentrancyGuard, Ownable {
         return items;
     }
 
+    function getTokenToSale(uint256 tokenId) external view returns(MarketItem memory sale){
+        if(getTokenToItem(tokenId) != 0){
+            return(idToMarketItem[getTokenToItem(tokenId) ]);
+        }
+    }
+
 
     receive() external payable {}
     fallback() external payable {}
